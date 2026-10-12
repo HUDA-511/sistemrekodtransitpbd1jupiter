@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Rekod Transit PBD</title>
+
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+        }
+        .glass-header {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.8); border-radius: 4px; }
+        @media print {
+            body { background: white !important; }
+            .no-print { display: none !important; }
+            .glass { background: white !important; backdrop-filter: none !important; border: 1px solid #ddd !important; box-shadow: none !important; }
+            .print-break { page-break-before: always; }
+            textarea.print-clean { border: none !important; background: transparent !important; resize: none !important; overflow: hidden !important; }
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 md:p-8 font-sans">
+        <!-- Header Nav -->
+        <div class="glass-header rounded-2xl p-4 flex flex-col md:flex-row justify-between items-center mb-8 shadow-sm no-print">
+            <div class="flex items-center gap-4 mb-4 md:mb-0">
+                <div id="header-logo-container">
+                    <div class="w-12 h-12 bg-indigo-100 text-indigo-500 rounded-lg flex items-center justify-center text-xl shadow-inner">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-800 tracking-tight">Sistem Rekod Transit PBD</h1>
+                    <p id="header-sub-text" class="text-sm font-medium text-indigo-600">Bahasa Inggeris | Tingkatan 1</p>
+                </div>
+            </div>
+
+            <div class="flex bg-white/40 p-1 rounded-xl shadow-inner gap-1">
+                <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="capitalize px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 bg-white text-indigo-700 shadow-md">Dashboard</button>
+                <button onclick="switchTab('rekod')" id="tab-btn-rekod" class="capitalize px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 text-gray-600 hover:bg-white/50">Rekod</button>
+                <button onclick="switchTab('laporan')" id="tab-btn-laporan" class="capitalize px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 text-gray-600 hover:bg-white/50">Laporan</button>
+                <button onclick="switchTab('tetapan')" id="tab-btn-tetapan" class="capitalize px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 text-gray-600 hover:bg-white/50">Tetapan</button>
+            </div>
+        </div>
+
+        <!-- Views Container -->
+        <div id="view-dashboard"></div>
+        <div id="view-rekod" class="hidden"></div>
+        <div id="view-laporan" class="hidden"></div>
+        <div id="view-tetapan" class="hidden"></div>
+    </div>
+
+    <!-- Murni JavaScript (Standard Native JS) -->
+    <script>
+        // Data Awal
+        const initialTopics = [
+            { id: 't1', code: 'T1', name: 'People and Culture' },
+            { id: 't2', code: 'T2', name: 'Health and Environment' },
+            { id: 't3', code: 'T3', name: 'Science and Technology' },
+            { id: 't4', code: 'T4', name: 'Consumerism and Financial Awareness' },
+            { id: 't5', code: 'T5', name: 'Literature in Action' }
+        ];
+
+        const initialStudents = [
+            { id: '1', name: 'JAHIRA A/P JAAFAR', marks: { t1: 45, t2: 50, t3: 35, t4: 55, t5: 60 } },
+            { id: '2', name: 'JAMRISH RAFIE EL A/L JAMAL', marks: { t1: 85, t2: 78, t3: 92, t4: 80, t5: 88 } }
+        ];
+
+        const initialSettings = {
+            schoolLogo: '',
+            subjectName: 'Bahasa Inggeris',
+            form: 'Tingkatan 1'
+        };
+
+        // Global State
+        let state = {
+            activeTab: 'dashboard',
+            topics: initialTopics,
+            students: initialStudents,
+            settings: initialSettings,
+            selectedStudentId: ''
+        };
+
+        let barChartInstance = null;
+        let radarChartInstance = null;
+
+        // Load & Save LocalStorage
+        function loadData() {
+            try {
+                const saved = localStorage.getItem('pbd_data_v2');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.topics) state.topics = parsed.topics;
+                    if (parsed.students) state.students = parsed.students;
+                    if (parsed.settings) state.settings = parsed.settings;
+                }
+            } catch(e) { console.error("Ralat LocalStorage", e); }
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem('pbd_data_v2', JSON.stringify({
+                    topics: state.topics,
+                    students: state.students,
+                    settings: state.settings
+                }));
+            } catch(e) {}
+        }
+
+        // Helper TP
+        function getTPInfo(mark) {
+            if (mark === null || mark === undefined || mark === '') return { tp: '-', color: 'bg-gray-200 text-gray-500', name: 'Tiada' };
+            const m = parseInt(mark);
+            if (isNaN(m) || m < 0) return { tp: '-', color: 'bg-gray-200 text-gray-500', name: 'Tiada' };
+            if (m <= 19) return { tp: 'TP 1', color: 'bg-red-500 text-white', textColor: 'text-red-500' };
+            if (m <= 39) return { tp: 'TP 2', color: 'bg-orange-500 text-white', textColor: 'text-orange-500' };
+            if (m <= 59) return { tp: 'TP 3', color: 'bg-yellow-500 text-white', textColor: 'text-yellow-600' };
+            if (m <= 74) return { tp: 'TP 4', color: 'bg-blue-500 text-white', textColor: 'text-blue-500' };
+            if (m <= 89) return { tp: 'TP 5', color: 'bg-purple-500 text-white', textColor: 'text-purple-500' };
+            return { tp: 'TP 6', color: 'bg-green-500 text-white', textColor: 'text-green-500' };
+        }
+
+        function generateAutoComment(avgMark) {
+            if (avgMark == null || isNaN(avgMark)) return "";
+            if (avgMark <= 39) return "Pelajar menunjukkan perkembangan yang terhad. Bimbingan rapi secara individu atau berkumpulan dan intervensi berterusan amat diperlukan untuk meningkatkan penguasaan asas.";
+            if (avgMark <= 74) return "Pencapaian memuaskan dan berada pada tahap yang baik. Pelajar dinasihatkan untuk memperbanyakkan latihan dan fokus di dalam kelas bagi mencapai tahap cemerlang.";
+            return "Pencapaian yang sangat cemerlang. Pelajar menunjukkan pemahaman yang mendalam dan konsisten. Teruskan usaha dan boleh dijadikan pembimbing rakan sebaya (pengayaan).";
+        }
+
+        // Navigation
+        function switchTab(tab) {
+            state.activeTab = tab;
+            ['dashboard', 'rekod', 'laporan', 'tetapan'].forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                const view = document.getElementById(`view-${t}`);
+                if (t === tab) {
+                    btn.className = "capitalize px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 bg-white text-indigo-700 shadow-md";
+                    view.classList.remove('hidden');
+                } else {
+                    btn.className = "capitalize px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 text-gray-600 hover:bg-white/50";
+                    view.classList.add('hidden');
+                }
+            });
+            render();
+        }
+
+        function updateHeaderInfo() {
+            document.getElementById('header-sub-text').innerText = `${state.settings.subjectName} | ${state.settings.form}`;
+            const logoCont = document.getElementById('header-logo-container');
+            if (state.settings.schoolLogo) {
+                logoCont.innerHTML = `<img src="${state.settings.schoolLogo}" class="w-12 h-12 object-contain" />`;
+            } else {
+                logoCont.innerHTML = `<div class="w-12 h-12 bg-indigo-100 text-indigo-500 rounded-lg flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-graduation-cap"></i></div>`;
+            }
+        }
+
+        // Render Dashboard
+        function renderDashboard() {
+            let totalMarks = 0, countMarks = 0;
+            let tpCounts = { 'TP 1': 0, 'TP 2': 0, 'TP 3': 0, 'TP 4': 0, 'TP 5': 0, 'TP 6': 0 };
+            let intervention = [], excellent = [];
+
+            state.students.forEach(s => {
+                let sTotal = 0, sCount = 0;
+                state.topics.forEach(t => {
+                    const m = s.marks[t.id];
+                    if (m !== null && m !== undefined && m !== '') {
+                        sTotal += parseInt(m);
+                        sCount++;
+                    }
+                });
+                if (sCount > 0) {
+                    const avg = sTotal / sCount;
+                    totalMarks += avg;
+                    countMarks++;
+                    const tpInfo = getTPInfo(avg);
+                    if (tpCounts[tpInfo.tp] !== undefined) tpCounts[tpInfo.tp]++;
+                    if (avg <= 39) intervention.push({ ...s, avg, tpInfo });
+                    if (avg >= 75) excellent.push({ ...s, avg, tpInfo });
+                }
+            });
+
+            const classAvgMark = countMarks > 0 ? (totalMarks / countMarks).toFixed(1) : 0;
+            const classAvgTP = countMarks > 0 ? getTPInfo(classAvgMark).tp : '-';
+
+            const container = document.getElementById('view-dashboard');
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="glass p-6 rounded-2xl flex justify-between items-center">
+                            <div><p class="text-gray-500 text-sm font-semibold uppercase tracking-wider">Jumlah Pelajar</p><h3 class="text-4xl font-bold mt-2 text-indigo-800">${state.students.length}</h3></div>
+                            <div class="bg-white/50 p-4 rounded-full text-indigo-500 text-2xl"><i class="fa-solid fa-users"></i></div>
+                        </div>
+                        <div class="glass p-6 rounded-2xl flex justify-between items-center">
+                            <div><p class="text-gray-500 text-sm font-semibold uppercase tracking-wider">Purata Kelas</p><h3 class="text-4xl font-bold mt-2 text-indigo-800">${classAvgMark}%</h3></div>
+                            <div class="bg-white/50 p-4 rounded-full text-blue-500 text-2xl"><i class="fa-solid fa-chart-line"></i></div>
+                        </div>
+                        <div class="glass p-6 rounded-2xl flex justify-between items-center">
+                            <div><p class="text-gray-500 text-sm font-semibold uppercase tracking-wider">Purata TP</p><h3 class="text-4xl font-bold mt-2 text-indigo-800">${classAvgTP}</h3></div>
+                            <div class="bg-white/50 p-4 rounded-full text-green-500 text-2xl"><i class="fa-solid fa-award"></i></div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="glass p-6 rounded-2xl">
+                            <h3 class="text-lg font-bold mb-4 text-gray-700">Taburan Tahap Penguasaan</h3>
+                            <div class="h-64"><canvas id="barChartCanvas"></canvas></div>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="glass p-6 rounded-2xl border-l-4 border-l-red-500">
+                                <h3 class="text-lg font-bold mb-2 text-gray-700">Intervensi (TP 1 - TP 2)</h3>
+                                <ul class="space-y-2">
+                                    ${intervention.length === 0 ? '<li class="text-sm text-gray-500">Tiada pelajar.</li>' : 
+                                    intervention.map(s => `<li class="flex justify-between items-center bg-white/40 p-2 rounded-lg text-sm"><span class="font-semibold">${s.name}</span><span class="px-2 py-1 text-xs rounded-full ${s.tpInfo.color}">${s.tpInfo.tp}</span></li>`).join('')}
+                                </ul>
+                                <p class="text-xs text-red-600 mt-3 font-medium">* Tindakan Susulan: Bimbingan rapi secara individu/berkumpulan.</p>
+                            </div>
+                            <div class="glass p-6 rounded-2xl border-l-4 border-l-green-500">
+                                <h3 class="text-lg font-bold mb-2 text-gray-700">Cemerlang (TP 5 - TP 6)</h3>
+                                <ul class="space-y-2">
+                                    ${excellent.length === 0 ? '<li class="text-sm text-gray-500">Tiada pelajar.</li>' : 
+                                    excellent.map(s => `<li class="flex justify-between items-center bg-white/40 p-2 rounded-lg text-sm"><span class="font-semibold">${s.name}</span><span class="px-2 py-1 text-xs rounded-full ${s.tpInfo.color}">${s.tpInfo.tp}</span></li>`).join('')}
+                                </ul>
+                                <p class="text-xs text-green-600 mt-3 font-medium">* Tindakan Susulan: Pengayaan, KBAT & Rakan Pembimbing.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Draw Bar Chart
+            const ctx = document.getElementById('barChartCanvas').getContext('2d');
+            if (barChartInstance) barChartInstance.destroy();
+            barChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['TP 1', 'TP 2', 'TP 3', 'TP 4', 'TP 5', 'TP 6'],
+                    datasets: [{
+                        data: [tpCounts['TP 1'], tpCounts['TP 2'], tpCounts['TP 3'], tpCounts['TP 4'], tpCounts['TP 5'], tpCounts['TP 6']],
+                        backgroundColor: ['#ef4444', '#f97316', '#eab308', '#3b82f6', '#a855f7', '#22c55e'],
+                        borderRadius: 8
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+            });
+        }
+
+        // Render Rekod Transit
+        function renderRekod() {
+            const container = document.getElementById('view-rekod');
+            container.innerHTML = `
+                <div class="glass p-6 rounded-2xl overflow-x-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold text-gray-700">Rekod Markah Pelajar</h3>
+                        <button onclick="addStudent()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium"><i class="fa-solid fa-plus mr-2"></i>Tambah Pelajar</button>
+                    </div>
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-white/40 text-sm">
+                                <th class="p-3 w-10">No</th>
+                                <th class="p-3">Nama Pelajar</th>
+                                ${state.topics.map(t => `<th class="p-3 text-center" title="${t.name}">${t.code}</th>`).join('')}
+                                <th class="p-3 text-center">Tindakan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${state.students.map((s, idx) => `
+                                <tr class="border-b border-white/20 hover:bg-white/30">
+                                    <td class="p-3 text-center text-sm font-medium">${idx + 1}</td>
+                                    <td class="p-3">
+                                        <input type="text" value="${s.name}" onchange="updateStudentName('${s.id}', this.value)" className="w-full bg-transparent outline-none uppercase font-semibold text-sm p-1 border-b border-transparent hover:border-gray-300 focus:border-indigo-500" />
+                                    </td>
+                                    ${state.topics.map(t => {
+                                        const m = s.marks[t.id] !== undefined ? s.marks[t.id] : '';
+                                        const tpInfo = getTPInfo(m);
+                                        return `
+                                            <td class="p-3 text-center">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <input type="number" min="0" max="100" value="${m}" onchange="updateStudentMark('${s.id}', '${t.id}', this.value)" class="w-14 text-center rounded bg-white/50 border border-white/50 p-1 text-sm outline-none focus:ring-2 focus:ring-indigo-400" placeholder="-" />
+                                                    ${m !== '' ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${tpInfo.color}">${tpInfo.tp}</span>` : ''}
+                                                </div>
+                                            </td>
+                                        `;
+                                    }).join('')}
+                                    <td class="p-3 text-center">
+                                        <button onclick="deleteStudent('${s.id}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash-alt"></i></button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function addStudent() {
+            state.students.push({ id: Date.now().toString(), name: 'PELAJAR BARU', marks: {} });
+            saveData();
+            renderRekod();
+        }
+
+        function updateStudentName(id, val) {
+            const s = state.students.find(st => st.id === id);
+            if (s) s.name = val;
+            saveData();
+        }
+
+        function updateStudentMark(sId, tId, val) {
+            const s = state.students.find(st => st.id === sId);
+            if (s) {
+                let m = parseInt(val);
+                if (isNaN(m)) s.marks[tId] = '';
+                else s.marks[tId] = Math.min(100, Math.max(0, m));
+            }
+            saveData();
+            renderRekod();
+        }
+
+        function deleteStudent(id) {
+            if (confirm('Padam rekod pelajar ini?')) {
+                state.students = state.students.filter(st => st.id !== id);
+                saveData();
+                renderRekod();
+            }
+        }
+
+        // Render Laporan
+        function renderLaporan() {
+            const container = document.getElementById('view-laporan');
+            const st = state.students.find(s => s.id === state.selectedStudentId);
+
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <div class="glass p-6 rounded-2xl no-print flex gap-4 items-center">
+                        <label class="font-semibold text-gray-700">Pilih Pelajar:</label>
+                        <select onchange="selectStudentReport(this.value)" class="p-2 rounded-lg border border-white/50 bg-white/50 outline-none flex-1 max-w-md">
+                            <option value="">-- Sila Pilih Pelajar --</option>
+                            ${state.students.map(s => `<option value="${s.id}" ${s.id === state.selectedStudentId ? 'selected' : ''}>${s.name}</option>`).join('')}
+                        </select>
+                        ${st ? `<button onclick="window.print()" class="ml-auto bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg"><i class="fa-solid fa-print mr-2"></i> Cetak / PDF</button>` : ''}
+                    </div>
+                    <div id="report-content-area"></div>
+                </div>
+            `;
+
+            if (st) {
+                let tot = 0, cnt = 0;
+                state.topics.forEach(t => {
+                    const m = st.marks[t.id];
+                    if (m !== null && m !== undefined && m !== '') { tot += parseInt(m); cnt++; }
+                });
+                const avg = cnt > 0 ? (tot / cnt) : 0;
+                const oTP = getTPInfo(avg);
+
+                document.getElementById('report-content-area').innerHTML = `
+                    <div class="glass p-10 rounded-2xl bg-white/80 print-break text-gray-800">
+                        <div class="flex justify-between items-center border-b-2 border-gray-300 pb-6 mb-6">
+                            <div class="flex items-center gap-4">
+                                ${state.settings.schoolLogo ? `<img src="${state.settings.schoolLogo}" class="w-20 h-20 object-contain" />` : `<div class="w-20 h-20 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">Logo</div>`}
+                                <div>
+                                    <h2 class="text-2xl font-bold uppercase">Laporan Pentaksiran Bilik Darjah (PBD)</h2>
+                                    <p class="text-gray-600 text-lg">Subjek: ${state.settings.subjectName} | ${state.settings.form}</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm text-gray-500 uppercase">Tahap Keseluruhan</p>
+                                <h1 class="text-4xl font-black ${oTP.textColor} mt-1">${oTP.tp}</h1>
+                            </div>
+                        </div>
+
+                        <div class="mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <p class="text-sm text-gray-500">Nama Pelajar</p>
+                            <h3 class="text-xl font-bold uppercase">${st.name}</h3>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div>
+                                <h4 class="font-bold mb-3 border-b pb-2 text-gray-700">Perincian Mengikut Topik</h4>
+                                <table class="w-full text-sm">
+                                    <thead><tr class="border-b-2"><th class="py-2 text-left">Kod</th><th class="py-2 text-left">Topik</th><th class="py-2 text-center">Markah</th><th class="py-2 text-center">TP</th></tr></thead>
+                                    <tbody>
+                                        ${state.topics.map(t => {
+                                            const m = st.marks[t.id];
+                                            const tInf = getTPInfo(m);
+                                            return `<tr class="border-b"><td class="py-2 font-bold">${t.code}</td><td class="py-2">${t.name}</td><td class="py-2 text-center">${m !== undefined && m !== '' ? m : '-'}</td><td class="py-2 text-center"><span class="px-2 py-0.5 rounded text-xs font-bold ${tInf.color}">${tInf.tp}</span></td></tr>`;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div>
+                                <h4 class="font-bold mb-3 border-b pb-2 text-gray-700">Graf Perkembangan</h4>
+                                <div class="h-64"><canvas id="radarChartCanvas"></canvas></div>
+                            </div>
+                        </div>
+
+                        <div class="mt-8">
+                            <h4 class="font-bold mb-2 text-gray-700">Ulasan Guru & Tindakan Susulan</h4>
+                            <textarea class="w-full p-4 border rounded-lg bg-gray-50 print-clean outline-none" rows="3">${generateAutoComment(avg)}</textarea>
+                        </div>
+
+                        <div class="mt-12 flex justify-between px-10">
+                            <div class="text-center"><div class="border-b border-gray-400 w-48 mb-2"></div><p class="text-sm font-semibold">Tandatangan Guru</p></div>
+                            <div class="text-center"><div class="border-b border-gray-400 w-48 mb-2"></div><p class="text-sm font-semibold">Tandatangan Ibu Bapa</p></div>
+                        </div>
+                    </div>
+                `;
+
+                // Draw Radar Chart
+                const ctx = document.getElementById('radarChartCanvas').getContext('2d');
+                if (radarChartInstance) radarChartInstance.destroy();
+                radarChartInstance = new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: state.topics.map(t => t.code),
+                        datasets: [{
+                            label: 'Markah Topik',
+                            data: state.topics.map(t => st.marks[t.id] || 0),
+                            backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                            borderColor: 'rgba(99, 102, 241, 1)',
+                            pointBackgroundColor: 'rgba(99, 102, 241, 1)'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { r: { min: 0, max: 100, ticks: { stepSize: 20 } } } }
+                });
+            }
+        }
+
+        function selectStudentReport(id) {
+            state.selectedStudentId = id;
+            renderLaporan();
+        }
+
+        // Render Tetapan
+        function renderTetapan() {
+            const container = document.getElementById('view-tetapan');
+            container.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass p-6 rounded-2xl space-y-4">
+                        <h3 class="text-lg font-bold text-gray-700 border-b pb-2">Maklumat Am</h3>
+                        <div>
+                            <label class="block text-sm font-semibold mb-1">Logo Sekolah</label>
+                            <div class="flex items-center gap-4">
+                                ${state.settings.schoolLogo ? `<img src="${state.settings.schoolLogo}" class="w-12 h-12 rounded object-cover" />` : ''}
+                                <input type="file" accept="image/*" onchange="uploadLogo(this)" class="text-sm bg-white/50 p-1 rounded w-full" />
+                            </div>
+                        </div>
+                        <div><label class="block text-sm font-semibold mb-1">Nama Subjek</label><input type="text" value="${state.settings.subjectName}" onchange="updateSetting('subjectName', this.value)" class="w-full p-2 rounded-lg bg-white/50 outline-none" /></div>
+                        <div><label class="block text-sm font-semibold mb-1">Tingkatan / Tahun</label><input type="text" value="${state.settings.form}" onchange="updateSetting('form', this.value)" class="w-full p-2 rounded-lg bg-white/50 outline-none" /></div>
+                        
+                        <div class="pt-4 border-t space-y-3">
+                            <h4 class="font-bold text-sm text-gray-600">Pangkalan Data (Backup & Restore)</h4>
+                            <button onclick="exportData()" class="w-full bg-indigo-500 text-white p-2 rounded text-sm font-medium"><i class="fa-solid fa-download mr-2"></i> Muat Turun Data (JSON)</button>
+                            <div>
+                                <label class="w-full cursor-pointer bg-teal-500 text-white p-2 rounded text-sm font-medium inline-block text-center">
+                                    <i class="fa-solid fa-upload mr-2"></i> Muat Naik Data
+                                    <input type="file" accept=".json" onchange="importData(this)" class="hidden" />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass p-6 rounded-2xl">
+                        <div class="flex justify-between items-center border-b pb-2 mb-4">
+                            <h3 class="text-lg font-bold text-gray-700">Topik DSKP</h3>
+                            <button onclick="addTopic()" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded text-xs font-bold">+ Tambah</button>
+                        </div>
+                        <div class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                            ${state.topics.map(t => `
+                                <div class="flex gap-2 bg-white/30 p-2 rounded-lg">
+                                    <input type="text" value="${t.code}" onchange="updateTopic('${t.id}', 'code', this.value)" class="w-16 p-1 text-sm rounded bg-white/50 text-center font-bold" />
+                                    <input type="text" value="${t.name}" onchange="updateTopic('${t.id}', 'name', this.value)" class="flex-1 p-1 text-sm rounded bg-white/50" />
+                                    <button onclick="deleteTopic('${t.id}')" class="text-red-500 px-2"><i class="fa-solid fa-times"></i></button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function uploadLogo(input) {
+            const file = input.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    state.settings.schoolLogo = reader.result;
+                    saveData();
+                    updateHeaderInfo();
+                    renderTetapan();
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function updateSetting(key, val) {
+            state.settings[key] = val;
+            saveData();
+            updateHeaderInfo();
+        }
+
+        function addTopic() {
+            state.topics.push({ id: 't' + Date.now(), code: `T${state.topics.length + 1}`, name: 'Topik Baru' });
+            saveData();
+            renderTetapan();
+        }
+
+        function updateTopic(id, key, val) {
+            const t = state.topics.find(top => top.id === id);
+            if (t) t[key] = val;
+            saveData();
+        }
+
+        function deleteTopic(id) {
+            state.topics = state.topics.filter(top => top.id !== id);
+            saveData();
+            renderTetapan();
+        }
+
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ settings: state.settings, topics: state.topics, students: state.students }));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "backup_pbd.json");
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        }
+
+        function importData(input) {
+            const file = input.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const parsed = JSON.parse(e.target.result);
+                        if (parsed.settings) state.settings = parsed.settings;
+                        if (parsed.topics) state.topics = parsed.topics;
+                        if (parsed.students) state.students = parsed.students;
+                        saveData();
+                        updateHeaderInfo();
+                        renderTetapan();
+                        alert("Data berjaya dipulihkan!");
+                    } catch(err) { alert("Ralat membaca fail JSON!"); }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        // Global Render Router
+        function render() {
+            updateHeaderInfo();
+            if (state.activeTab === 'dashboard') renderDashboard();
+            else if (state.activeTab === 'rekod') renderRekod();
+            else if (state.activeTab === 'laporan') renderLaporan();
+            else if (state.activeTab === 'tetapan') renderTetapan();
+        }
+
+        // Init App
+        window.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            render();
+        });
+    </script>
+</body>
+</html>
